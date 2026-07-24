@@ -1,0 +1,23 @@
+pkgbase = z13center-git
+	pkgdesc = GTK4 control center for the ASUS ROG Flow Z13
+	pkgver = 0.1.0.r0.g0000000
+	pkgrel = 1
+	url = https://github.com/allisonhere/z13control
+	arch = x86_64
+	license = Apache-2.0
+	makedepends = git
+	makedepends = go
+	makedepends = gobject-introspection-runtime
+	makedepends = pkgconf
+	depends = gtk4
+	depends = graphene
+	depends = glib2
+	depends = pango
+	depends = cairo
+	optdepends = z13ctl: hardware control daemon required for live control
+	provides = z13center
+	conflicts = z13center
+	source = z13center-git::git+https://github.com/allisonhere/z13control.git
+	sha256sums = SKIP
+
+pkgname = z13center-git

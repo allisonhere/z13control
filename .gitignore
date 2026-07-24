@@ -2,3 +2,18 @@ z13center
 
 .agents/
 .codex/
+
+pkg/*.pkg.tar.*
+pkg/*.tar.zst
+pkg/src/
+pkg/pkg/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/tmp/
+debian/z13center/
+debian/z13center.substvars
+*.build
+*.buildinfo
+*.changes
+*.deb

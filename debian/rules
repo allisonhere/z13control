@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export GOFLAGS = -buildvcs=false
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	make VERSION=$(DEB_VERSION_UPSTREAM) build
+
+override_dh_auto_install:
+	make DESTDIR=$(CURDIR)/debian/z13center \
+		PREFIX=/usr \
+		UDEVDIR=/usr/lib/udev/rules.d \
+		USERUNITDIR=/usr/lib/systemd/user \
+		VERSION=$(DEB_VERSION_UPSTREAM) \
+		install

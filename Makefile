@@ -7,6 +7,10 @@ LDFLAGS := -X main.Version=$(VERSION)
 GO      ?= go
 
 UDEV_RULE := 70-z13-aura-uaccess.rules
+BINDIR   ?= $(PREFIX)/bin
+APPDIR   ?= $(PREFIX)/share/applications
+UDEVDIR  ?= /etc/udev/rules.d
+USERUNITDIR ?= /usr/lib/systemd/user
 
 .PHONY: all build run clean install uninstall install-user install-udev uninstall-udev fmt vet tidy
 
@@ -31,17 +35,19 @@ clean:
 	rm -f $(BINARY)
 
 install: build install-udev
-	install -Dm755 $(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)
-	install -Dm644 contrib/z13center.desktop $(DESTDIR)$(PREFIX)/share/applications/z13center.desktop
+	install -Dm755 $(BINARY) $(DESTDIR)$(BINDIR)/$(BINARY)
+	install -Dm644 contrib/z13center.desktop $(DESTDIR)$(APPDIR)/z13center.desktop
+	install -Dm644 contrib/z13center.service $(DESTDIR)$(USERUNITDIR)/z13center.service
 
 uninstall: uninstall-udev
-	rm -f $(DESTDIR)$(PREFIX)/bin/$(BINARY)
-	rm -f $(DESTDIR)$(PREFIX)/share/applications/z13center.desktop
+	rm -f $(DESTDIR)$(BINDIR)/$(BINARY)
+	rm -f $(DESTDIR)$(APPDIR)/z13center.desktop
+	rm -f $(DESTDIR)$(USERUNITDIR)/z13center.service
 
 # Install the uaccess udev rule so RGB lighting works for the logged-in user,
 # regardless of username or group. Requires root; reloads + re-triggers udev.
 install-udev:
-	install -Dm644 contrib/$(UDEV_RULE) $(DESTDIR)/etc/udev/rules.d/$(UDEV_RULE)
+	install -Dm644 contrib/$(UDEV_RULE) $(DESTDIR)$(UDEVDIR)/$(UDEV_RULE)
 ifeq ($(DESTDIR),)
 	udevadm control --reload
 	udevadm trigger --subsystem-match=hidraw
@@ -49,7 +55,7 @@ ifeq ($(DESTDIR),)
 endif
 
 uninstall-udev:
-	rm -f $(DESTDIR)/etc/udev/rules.d/$(UDEV_RULE)
+	rm -f $(DESTDIR)$(UDEVDIR)/$(UDEV_RULE)
 
 # Install + enable the per-user systemd service (runs alongside the z13ctl daemon).
 install-user: build

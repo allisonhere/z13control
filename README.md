@@ -75,6 +75,35 @@ make install-user
 systemctl --user enable --now z13center.service
 ```
 
+## Packaging
+
+Arch and Debian packaging scaffolding lives in-repo:
+
+- `pkg/arch/PKGBUILD` and `pkg/arch/.SRCINFO` for an AUR-style `z13center-git`
+  package
+- `debian/` for standard Debian package builds
+
+Typical package build entrypoints:
+
+```sh
+# Arch
+cd pkg/arch
+makepkg --syncdeps --cleanbuild
+
+# Debian
+dpkg-buildpackage -us -uc
+```
+
+Both package families install:
+
+- the `z13center` binary
+- the desktop launcher
+- the user systemd unit
+- the `uaccess` RGB `udev` rule
+
+The packages do not bundle `z13ctl`. Install it separately for live hardware
+control.
+
 ## License
 
 Apache-2.0, matching the upstream z13ctl / z13gui projects.

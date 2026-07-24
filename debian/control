@@ -1,0 +1,34 @@
+Source: z13center
+Section: utils
+Priority: optional
+Maintainer: Allison Here <allisonhere@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ golang-any,
+ libgirepository1.0-dev,
+ libgtk-4-dev,
+ libgraphene-1.0-dev,
+ libglib2.0-dev,
+ libpango1.0-dev,
+ libcairo2-dev,
+ pkg-config
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/allisonhere/z13control
+
+Package: z13center
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends}
+Recommends:
+ systemd,
+ udev
+Suggests:
+ z13ctl
+Description: GTK4 control center for the ASUS ROG Flow Z13
+ z13center is a desktop control center for the 2025 ASUS ROG Flow Z13.
+ It provides live telemetry, fan-curve editing, power controls, battery
+ settings, and Aura lighting controls through the external z13ctl daemon.
+ .
+ When z13ctl is unavailable, the application stays usable in preview mode.
