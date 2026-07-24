@@ -21,6 +21,8 @@ GO_MOD_CACHE_DIR="${GO_MOD_CACHE_DIR:-/tmp/z13center-go-mod-cache}"
 RELEASE_DIR="${RELEASE_DIR:-$PROJECT_DIR/dist/release}"
 STEP_START=0
 RELEASE_VERSION=""
+FLOW_TOTAL=0
+FLOW_INDEX=0
 
 print_header() {
   if [ -t 1 ] && command -v clear >/dev/null 2>&1; then
@@ -64,6 +66,25 @@ print_step() {
   echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${BOLD}$1${NC}"
   echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+start_flow() {
+  FLOW_TOTAL=$1
+  FLOW_INDEX=0
+}
+
+print_flow_step() {
+  FLOW_INDEX=$((FLOW_INDEX + 1))
+  print_step "[$FLOW_INDEX/$FLOW_TOTAL] $1"
+}
+
+print_flow_status() {
+  local current=${1:-$FLOW_INDEX}
+  local remaining=0
+  if [ "$FLOW_TOTAL" -gt "$current" ]; then
+    remaining=$((FLOW_TOTAL - current))
+  fi
+  echo -e "  ${CYAN}Progress:${NC} step ${current}/${FLOW_TOTAL} ${DIM}(${remaining} remaining)${NC}"
 }
 
 print_substep() { echo -e "  ${DIM}→${NC} $1"; }
@@ -250,6 +271,7 @@ EOF
 
 preflight() {
   print_step "Preflight"
+  print_flow_status
   require_command git
   require_command go
   require_command gh
@@ -304,6 +326,7 @@ commit_changes() {
 push_branch() {
   local local_sha remote_sha base_sha
   print_step "Push Branch"
+  print_flow_status
   print_substep "Fetching remote state"
   (cd "$PROJECT_DIR" && run_cmd git fetch "$REPO_REMOTE" "$REPO_BRANCH")
 
@@ -335,6 +358,7 @@ build_arch_package() {
   fi
 
   print_step "Build Arch Package"
+  print_flow_status
   mkdir -p "$output_dir"
   (
     cd "$PROJECT_DIR/pkg/arch"
@@ -352,6 +376,7 @@ build_debian_package() {
   fi
 
   print_step "Build Debian Package"
+  print_flow_status
   mkdir -p "$output_dir"
   (
     cd "$PROJECT_DIR"
@@ -365,6 +390,7 @@ build_binary() {
   local output_dir=$1
   local build_version=${2:-}
   print_step "Build Release Binary"
+  print_flow_status
   mkdir -p "$output_dir"
   if [ -z "$build_version" ]; then
     build_version="$(git -C "$PROJECT_DIR" describe --tags --always --dirty 2>/dev/null || echo dev)"
@@ -378,6 +404,7 @@ build_binary() {
 
 create_tag() {
   print_step "Create Tag"
+  print_flow_status
   (cd "$PROJECT_DIR" && run_cmd git tag -a "$RELEASE_VERSION" -m "Release $RELEASE_VERSION")
   (cd "$PROJECT_DIR" && run_cmd git push "$REPO_REMOTE" "$RELEASE_VERSION")
   print_success "Tag $RELEASE_VERSION published"
@@ -394,6 +421,7 @@ create_release() {
   shopt -u nullglob
 
   print_step "Create GitHub Release"
+  print_flow_status
   (
     cd "$PROJECT_DIR"
     run_cmd gh release create "$RELEASE_VERSION" \
@@ -406,6 +434,7 @@ create_release() {
 
 summarize_release() {
   print_step "Summary"
+  print_flow_status "$FLOW_TOTAL"
   echo -e "  ${BOLD}Version:${NC}      $RELEASE_VERSION"
   echo -e "  ${BOLD}Branch:${NC}       $REPO_BRANCH"
   echo -e "  ${BOLD}Artifacts:${NC}    $RELEASE_DIR"
@@ -428,28 +457,52 @@ run_code_only_flow() {
 }
 
 run_full_release() {
-  local notes_file build_arch build_debian
+  local notes_file total_steps
   notes_file=$(mktemp)
   trap 'rm -f "$notes_file"' EXIT
 
+  total_steps=6
+  if confirm "Build Arch package during this release?"; then
+    RELEASE_BUILD_ARCH=1
+    total_steps=$((total_steps + 1))
+  else
+    RELEASE_BUILD_ARCH=0
+  fi
+  if confirm "Build Debian package during this release?"; then
+    RELEASE_BUILD_DEBIAN=1
+    total_steps=$((total_steps + 1))
+  else
+    RELEASE_BUILD_DEBIAN=0
+  fi
+  start_flow "$total_steps"
+
+  print_flow_step "Preflight"
   preflight
+  print_flow_step "Commit changes"
   commit_changes
+  print_flow_step "Push branch"
   push_branch
+  print_flow_step "Select version and edit release notes"
   require_release_version
   print_info "Selected release version: $RELEASE_VERSION"
   prepare_release_notes "$notes_file"
 
+  print_flow_step "Build release binary"
   build_binary "$RELEASE_DIR" "$RELEASE_VERSION"
 
-  if confirm "Build Arch package?"; then
+  if [ "${RELEASE_BUILD_ARCH:-0}" -eq 1 ]; then
+    print_flow_step "Build Arch package"
     build_arch_package "$RELEASE_DIR"
   fi
 
-  if confirm "Build Debian package?"; then
+  if [ "${RELEASE_BUILD_DEBIAN:-0}" -eq 1 ]; then
+    print_flow_step "Build Debian package"
     build_debian_package "$RELEASE_DIR"
   fi
 
+  print_flow_step "Create and push tag"
   create_tag
+  print_flow_step "Create GitHub release"
   create_release "$notes_file"
   summarize_release
 }
