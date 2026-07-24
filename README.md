@@ -68,11 +68,64 @@ systemctl --user restart z13ctl.service
 
 ## Install
 
+### Guided install (recommended)
+
+Clone the repository, then start the installer:
+
 ```sh
-sudo make install          # /usr/local/bin + .desktop entry
-# or, as a per-user service alongside the z13ctl daemon:
+# SSH
+git clone git@github.com:allisonhere/z13control.git
+cd z13control
+
+# Start the installer
+./install.sh
+```
+
+If you do not use a GitHub SSH key, clone over HTTPS instead:
+
+```sh
+git clone https://github.com/allisonhere/z13control.git
+cd z13control
+./install.sh
+```
+
+Press **Enter** at the menu to select the recommended installation. The
+installer will:
+
+- check Go, GTK4, and other build requirements
+- build z13center
+- install the application and desktop launcher
+- install the RGB hardware-permission rule
+- install and optionally start the per-user service
+- optionally restart `z13ctl.service`
+
+The installer also provides Status, Repair, Advanced, and Uninstall actions. It
+explains each change before making it and shows numbered progress during
+multi-step operations.
+
+### Updating
+
+Run the installer again and choose **Update an existing install**:
+
+```sh
+cd z13control
+./install.sh
+```
+
+The updater checks `origin/main` over SSH or HTTPS, fast-forwards the local
+checkout, rebuilds the application, reinstalls its files, and offers to restart
+the services. Commit or stash local changes before updating.
+
+### Manual install
+
+To install without the guided installer:
+
+```sh
+make build
+sudo make install
 make install-user
 systemctl --user enable --now z13center.service
+systemctl --user restart z13ctl.service
 ```
 
 ## Packaging
