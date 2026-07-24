@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=z13 Control Center
+Comment=Control RGB, fans, power and battery on the ASUS ROG Flow Z13
+Exec=z13center
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=asus;rog;flow;z13;fan;tdp;rgb;aura;undervolt;

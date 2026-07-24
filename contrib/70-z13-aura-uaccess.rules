@@ -1,0 +1,9 @@
+# Grant the locally logged-in user access to the ASUS Aura HID devices on the
+# ROG Flow Z13 (keyboard 0b05:1a30, lightbar 0b05:18c6) so the z13ctl daemon —
+# which runs as your user — can drive RGB lighting.
+#
+# uaccess ties access to the active seat session via a dynamic ACL, so it works
+# for ANY user with no group membership and no hardcoded username. The file must
+# sort BEFORE /usr/lib/udev/rules.d/73-seat-late.rules (which consumes the tag),
+# hence the 70- prefix.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b05", TAG+="uaccess"

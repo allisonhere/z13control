@@ -1,0 +1,298 @@
+/* z13center — dark ROG-neon theme (GTK4 CSS). */
+
+@define-color bg        #0a0c12;
+@define-color bg2       #10131c;
+@define-color surface   #151926;
+@define-color surface2  #1b2030;
+@define-color border    #262d40;
+@define-color text      #e8ecf5;
+@define-color muted     #8b93a7;
+@define-color cyan      #00e5ff;
+@define-color magenta   #ff2d78;
+@define-color amber     #ffb020;
+@define-color danger    #ff4d4d;
+
+* {
+  font-family: "Inter", "Cantarell", sans-serif;
+  outline: none;
+}
+
+.z13-root {
+  background: @bg;
+  color: @text;
+  border-radius: 14px;
+  border: 1px solid @border;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  background: linear-gradient(180deg, #0c0f18, #080a10);
+  border-right: 1px solid @border;
+  border-radius: 13px 0 0 13px;
+  padding: 18px 12px;
+}
+.brand { padding: 6px 10px 22px 10px; }
+.brand-logo {
+  font-size: 26px;
+  font-weight: 800;
+  color: @text;
+  letter-spacing: 2px;
+}
+.brand-sub {
+  font-size: 10px;
+  font-weight: 700;
+  color: @cyan;
+  letter-spacing: 3px;
+}
+.nav-item {
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 12px;
+  margin: 2px 0;
+  color: @muted;
+  box-shadow: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+.nav-item:hover { background: alpha(@cyan, 0.07); color: @text; }
+.nav-item label { font-size: 14px; font-weight: 500; }
+.nav-item image { color: @muted; }
+.nav-item.active {
+  background: alpha(@cyan, 0.12);
+  color: @text;
+  box-shadow: inset 3px 0 0 0 @cyan;
+}
+.nav-item.active image { color: @cyan; }
+.nav-item.active label { color: @text; font-weight: 600; }
+
+/* ---------- Content ---------- */
+.content { background: @bg; border-radius: 0 14px 14px 0; }
+.header {
+  padding: 12px 12px 10px 26px;
+}
+.header-title { font-size: 20px; font-weight: 700; color: @text; }
+.win-btn {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 28px;
+  min-height: 28px;
+  color: @muted;
+  box-shadow: none;
+}
+.win-btn:hover { background: alpha(@text, 0.1); color: @text; }
+.win-close:hover { background: @danger; color: #ffffff; }
+.header-read {
+  font-size: 14px;
+  font-weight: 600;
+  color: @cyan;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: alpha(@cyan, 0.08);
+  border: 1px solid alpha(@cyan, 0.25);
+}
+.page { padding: 6px 26px 28px 26px; }
+
+.conn-label {
+  background: alpha(@amber, 0.14);
+  color: @amber;
+  border-bottom: 1px solid alpha(@amber, 0.3);
+  padding: 8px 26px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- Cards ---------- */
+.card {
+  background: @surface;
+  border: 1px solid @border;
+  border-radius: 16px;
+  padding: 18px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: @muted;
+  letter-spacing: 1.5px;
+  margin-bottom: 2px;
+}
+.section-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: @muted;
+  letter-spacing: 2px;
+  margin: 10px 2px 2px 2px;
+}
+.caption { font-size: 12px; color: @muted; }
+.warning {
+  font-size: 12px;
+  font-weight: 600;
+  color: @danger;
+  background: alpha(@danger, 0.1);
+  border: 1px solid alpha(@danger, 0.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* ---------- Gauges ---------- */
+.gauge { min-height: 124px; }
+
+/* ---------- Profile cards ---------- */
+.profile-card {
+  background: @surface2;
+  border: 1px solid @border;
+  border-radius: 16px;
+  padding: 18px 12px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.profile-card:hover { border-color: alpha(@cyan, 0.4); background: #202638; }
+.profile-icon { color: @muted; }
+.profile-name { font-size: 15px; font-weight: 700; color: @text; }
+.profile-blurb { font-size: 11px; color: @muted; }
+.profile-card.selected {
+  border-color: @cyan;
+  background: alpha(@cyan, 0.1);
+  box-shadow: 0 0 0 1px @cyan, 0 6px 20px alpha(@cyan, 0.15);
+}
+.profile-card.selected .profile-icon,
+.profile-card.selected .profile-name { color: @cyan; }
+
+/* ---------- Status strip ---------- */
+.stat-tile {
+  background: @surface;
+  border: 1px solid @border;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.stat-value { font-size: 20px; font-weight: 700; color: @text; }
+.stat-label { font-size: 11px; color: @muted; letter-spacing: 0.5px; }
+
+/* ---------- Sliders ---------- */
+.slider-name { font-size: 14px; font-weight: 600; color: @text; }
+.slider-value { font-size: 14px; font-weight: 700; color: @cyan; }
+scale { padding: 6px 0; }
+scale trough {
+  min-height: 7px;
+  border-radius: 6px;
+  background: @surface2;
+  border: 1px solid @border;
+}
+scale highlight {
+  border-radius: 6px;
+  background: linear-gradient(90deg, @cyan, @magenta);
+}
+scale slider {
+  min-width: 18px;
+  min-height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  border: 2px solid @cyan;
+  margin: -7px;
+}
+scale slider:hover { background: @cyan; }
+
+/* ---------- Buttons ---------- */
+button {
+  border-radius: 10px;
+  border: 1px solid @border;
+  background: @surface2;
+  color: @text;
+  padding: 10px 14px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+button:hover { background: #232a3d; border-color: alpha(@cyan, 0.4); }
+button.primary {
+  background: linear-gradient(90deg, @cyan, #2aa9ff);
+  color: #04202a;
+  border: none;
+  font-weight: 700;
+}
+button.primary:hover { background: linear-gradient(90deg, #37edff, #37b6ff); }
+
+.seg-btn, .mode-btn { background: @surface2; color: @muted; }
+.seg-btn.selected, .mode-btn.selected {
+  background: alpha(@cyan, 0.14);
+  color: @cyan;
+  border-color: @cyan;
+}
+
+.mode-grid { padding: 0; }
+
+.palette-preview {
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid @border;
+}
+.palette-stop {
+  background: @surface2;
+  border-radius: 10px;
+  padding: 7px 9px;
+}
+.palette-stop colorbutton {
+  min-width: 62px;
+  min-height: 34px;
+}
+.palette-stop button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px;
+}
+
+/* ---------- Swatches ---------- */
+.swatch {
+  min-width: 46px;
+  min-height: 46px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  padding: 0;
+}
+.swatch.selected { border: 2px solid #ffffff; box-shadow: 0 0 0 2px @cyan; }
+.swatch-0 { background: #ff0066; }
+.swatch-1 { background: #ff3b00; }
+.swatch-2 { background: #ffb300; }
+.swatch-3 { background: #9bff00; }
+.swatch-4 { background: #00e5ff; }
+.swatch-5 { background: #2979ff; }
+.swatch-6 { background: #7c4dff; }
+.swatch-7 { background: #ffffff; }
+
+/* ---------- Switch ---------- */
+switch {
+  border-radius: 20px;
+  background: @surface2;
+  border: 1px solid @border;
+  min-width: 46px;
+  min-height: 26px;
+}
+switch:checked {
+  background: @cyan;
+  border-color: @cyan;
+}
+switch slider {
+  background: #ffffff;
+  border-radius: 50%;
+  min-width: 20px;
+  min-height: 20px;
+}
+
+/* ---------- Fan canvas ---------- */
+.fan-canvas {
+  background: @bg2;
+  border: 1px solid @border;
+  border-radius: 12px;
+}
+
+/* ---------- Scrollbar (hidden — scrolling still works via wheel/touch) ---------- */
+scrollbar {
+  opacity: 0;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+}
+scrollbar slider { min-width: 0; min-height: 0; }
+undershoot, overshoot { background: none; }

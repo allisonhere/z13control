@@ -1,0 +1,743 @@
+diff --git a/api/client.go b/api/client.go
+index 5707263..82d2eee 100644
+--- a/api/client.go
++++ b/api/client.go
+@@ -34,10 +34,11 @@ type request struct {
+ 	Mode       string   `json:"mode,omitempty"`
+ 	Color      string   `json:"color,omitempty"`   // "RRGGBB" hex
+ 	Color2     string   `json:"color2,omitempty"`  // "RRGGBB" hex
++	Palette    []string `json:"palette,omitempty"` // 2–8 "RRGGBB" color stops
+ 	Speed      string   `json:"speed,omitempty"`
+ 	Brightness int      `json:"brightness,omitempty"`
+ 	Set        string   `json:"set,omitempty"`
+-	Device     string   `json:"device,omitempty"`  // "keyboard", "lightbar", /dev/hidrawN; empty = all
++	Device     string   `json:"device,omitempty"` // "keyboard", "lightbar", /dev/hidrawN; empty = all
+ 	Events     []string `json:"events,omitempty"`
+ 	PL1        string   `json:"pl1,omitempty"`
+ 	PL2        string   `json:"pl2,omitempty"`
+@@ -105,6 +106,26 @@ func SendApply(device, color, color2, mode, speed string, brightness int) (bool,
+ 	return true, nil
+ }
+ 
++// SendPalette starts a daemon-managed smooth cycle through 2–8 colors.
++// The animation continues after the client disconnects. device follows the
++// same targeting rules as SendApply.
++func SendPalette(device string, palette []string, speed string, brightness int) (bool, error) {
++	handled, resp, err := sendCommand(request{
++		Cmd:        "palette",
++		Palette:    palette,
++		Speed:      speed,
++		Brightness: brightness,
++		Device:     device,
++	})
++	if !handled || err != nil {
++		return handled, err
++	}
++	if !resp.OK {
++		return true, fmt.Errorf("%s", resp.Error)
++	}
++	return true, nil
++}
++
+ // SendOff sends an off command to the daemon. device may be "keyboard",
+ // "lightbar", a /dev/hidrawN path, or "" to target all devices.
+ func SendOff(device string) (bool, error) {
+diff --git a/api/types.go b/api/types.go
+index c9aa048..10478da 100644
+--- a/api/types.go
++++ b/api/types.go
+@@ -9,6 +9,7 @@ package api
+ type State struct {
+ 	Lighting           LightingState            `json:"lighting"`
+ 	Devices            map[string]LightingState `json:"devices,omitempty"` // per-device overrides keyed by name
++	Capabilities       []string                 `json:"capabilities,omitempty"`
+ 	Profile            string                   `json:"profile,omitempty"`
+ 	Battery            int                      `json:"battery_limit,omitempty"`
+ 	BootSound          int                      `json:"boot_sound,omitempty"`
+@@ -16,19 +17,20 @@ type State struct {
+ 	FanCurve           *FanCurveState           `json:"fan_curve,omitempty"`
+ 	TDP                *TDPState                `json:"tdp,omitempty"`
+ 	Undervolt          *UndervoltState          `json:"undervolt,omitempty"`
+-	UndervoltAvailable bool                     `json:"undervolt_available"` // true if ryzen_smu is loaded
+-	Temperature        int                      `json:"temperature,omitempty"`  // APU temp, degrees Celsius
+-	FanRPM             int                      `json:"fan_rpm,omitempty"`      // fan1 speed in RPM
++	UndervoltAvailable bool                     `json:"undervolt_available"`   // true if ryzen_smu is loaded
++	Temperature        int                      `json:"temperature,omitempty"` // APU temp, degrees Celsius
++	FanRPM             int                      `json:"fan_rpm,omitempty"`     // fan1 speed in RPM
+ }
+ 
+ // LightingState captures all parameters needed to reproduce one lighting zone.
+ type LightingState struct {
+-	Enabled    bool   `json:"enabled"`
+-	Mode       string `json:"mode"`
+-	Color      string `json:"color"`  // "RRGGBB" hex
+-	Color2     string `json:"color2"` // "RRGGBB" hex
+-	Speed      string `json:"speed"`
+-	Brightness int    `json:"brightness"` // 0–3
++	Enabled    bool     `json:"enabled"`
++	Mode       string   `json:"mode"`
++	Color      string   `json:"color"`             // "RRGGBB" hex
++	Color2     string   `json:"color2"`            // "RRGGBB" hex
++	Palette    []string `json:"palette,omitempty"` // 2–8 "RRGGBB" color stops
++	Speed      string   `json:"speed"`
++	Brightness int      `json:"brightness"` // 0–3
+ }
+ 
+ // FanCurvePoint represents one point on an 8-point fan curve.
+diff --git a/internal/aura/aura.go b/internal/aura/aura.go
+index 7783bda..b5466d6 100644
+--- a/internal/aura/aura.go
++++ b/internal/aura/aura.go
+@@ -22,6 +22,12 @@ type Writer interface {
+ 	Write(data []byte) error
+ }
+ 
++// FeatureWriter is implemented by HID devices that can send Aura feature
++// reports. Direct lighting uses feature reports instead of mode commits.
++type FeatureWriter interface {
++	SetFeature(data []byte) error
++}
++
+ // auraID is the HID Report ID for all Aura output reports (0x5d).
+ const auraID = 0x5d
+ 
+@@ -162,6 +168,32 @@ func Apply(d Writer, mode Mode, r, g, b, r2, g2, b2 uint8, speed Speed, brightne
+ 	return nil
+ }
+ 
++// InitDirect switches a device to Aura's streaming color path. Callers should
++// allow the device 50 ms to settle before sending the first direct frame.
++func InitDirect(d FeatureWriter) error {
++	if err := d.SetFeature([]byte{auraID, 0xBC, 0x01}); err != nil {
++		return fmt.Errorf("init direct: %w", err)
++	}
++	return nil
++}
++
++// UpdateDirect streams one solid RGB frame without a SetMode commit. This is
++// the protocol path used by G-Helper for ambient and audio-reactive lighting.
++func UpdateDirect(d FeatureWriter, r, g, b uint8) error {
++	msg := make([]byte, 12)
++	msg[0] = auraID
++	msg[1] = 0xBC
++	msg[2] = 0x01
++	msg[3] = 0x01
++	msg[9] = r
++	msg[10] = g
++	msg[11] = b
++	if err := d.SetFeature(msg); err != nil {
++		return fmt.Errorf("update direct: %w", err)
++	}
++	return nil
++}
++
+ // TurnOff disables all lighting zones.
+ func TurnOff(d Writer) error {
+ 	if err := Init(d); err != nil {
+diff --git a/internal/aura/aura_test.go b/internal/aura/aura_test.go
+index 6243c81..22b8ec3 100644
+--- a/internal/aura/aura_test.go
++++ b/internal/aura/aura_test.go
+@@ -225,3 +225,33 @@ func TestTurnOff(t *testing.T) {
+ 		t.Error("TurnOff: missing Brightness 0 packet")
+ 	}
+ }
++
++func TestDirectLighting(t *testing.T) {
++	t.Parallel()
++	m := &mockFeatureWriter{}
++	if err := aura.InitDirect(m); err != nil {
++		t.Fatalf("InitDirect: %v", err)
++	}
++	if err := aura.UpdateDirect(m, 0x12, 0x34, 0x56); err != nil {
++		t.Fatalf("UpdateDirect: %v", err)
++	}
++	if len(m.packets) != 2 {
++		t.Fatalf("feature packets = %d, want 2", len(m.packets))
++	}
++	if !bytes.Equal(m.packets[0], []byte{0x5d, 0xBC, 0x01}) {
++		t.Errorf("init packet = %x", m.packets[0])
++	}
++	if got := m.packets[1]; len(got) != 12 || got[0] != 0x5d || got[1] != 0xBC ||
++		got[2] != 1 || got[3] != 1 || got[9] != 0x12 || got[10] != 0x34 || got[11] != 0x56 {
++		t.Errorf("color packet = %x", got)
++	}
++}
++
++type mockFeatureWriter struct {
++	packets [][]byte
++}
++
++func (m *mockFeatureWriter) SetFeature(data []byte) error {
++	m.packets = append(m.packets, append([]byte(nil), data...))
++	return nil
++}
+diff --git a/internal/daemon/daemon.go b/internal/daemon/daemon.go
+index 03dbc10..d69811c 100644
+--- a/internal/daemon/daemon.go
++++ b/internal/daemon/daemon.go
+@@ -23,6 +23,7 @@ import (
+ 	"path/filepath"
+ 	"strings"
+ 	"sync"
++	"time"
+ 
+ 	"github.com/coreos/go-systemd/v22/activation"
+ 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
+@@ -35,9 +36,11 @@ import (
+ 
+ // Daemon holds the runtime state for the long-running z13ctl process.
+ type Daemon struct {
+-	mu    sync.Mutex
+-	dev   *hid.Device // nil if no HID device was found at startup
+-	state api.State
++	mu         sync.Mutex
++	dev        *hid.Device // nil if no HID device was found at startup
++	state      api.State
++	runCtx     context.Context
++	animations map[string]context.CancelFunc
+ 
+ 	subMu       sync.Mutex
+ 	subscribers []net.Conn // long-lived connections subscribed to events
+@@ -50,7 +53,9 @@ type Daemon struct {
+ // Unix socket.
+ func Run(ctx context.Context, watchBtn bool) error {
+ 	d := &Daemon{
+-		buttonCh: make(chan struct{}, 4),
++		buttonCh:   make(chan struct{}, 4),
++		runCtx:     ctx,
++		animations: make(map[string]context.CancelFunc),
+ 	}
+ 
+ 	d.state = loadState()
+@@ -274,6 +279,13 @@ func applyZone(dev *hid.Device, ls api.LightingState) error {
+ 	return aura.Apply(dev, mode, r, g, b, r2, g2, b2, speed, uint8(ls.Brightness))
+ }
+ 
++func (d *Daemon) animationContext() context.Context {
++	if d.runCtx != nil {
++		return d.runCtx
++	}
++	return context.Background()
++}
++
+ // reopenAndRestore re-enumerates the HID device and re-applies the saved lighting
+ // state. It is called after the detachable keyboard is reattached, where the
+ // keyboard appears as a new hidraw node that the old d.dev no longer references.
+@@ -305,6 +317,7 @@ func (d *Daemon) reopenAndRestore() bool {
+ // If per-device states are saved (d.state.Devices), each zone is restored independently;
+ // otherwise the all-device state (d.state.Lighting) is applied to all zones.
+ func (d *Daemon) applyLightingState() error {
++	d.stopPaletteLocked("")
+ 	if len(d.state.Devices) > 0 {
+ 		for _, name := range []string{"keyboard", "lightbar"} {
+ 			ls := d.state.Lighting
+@@ -315,7 +328,7 @@ func (d *Daemon) applyLightingState() error {
+ 			if ferr != nil {
+ 				continue // zone not present on this system
+ 			}
+-			if err := applyZone(target, ls); err != nil {
++			if err := d.applyLightingZoneLocked(name, target, ls, time.Now()); err != nil {
+ 				return err
+ 			}
+ 			if ls.Enabled {
+@@ -326,7 +339,7 @@ func (d *Daemon) applyLightingState() error {
+ 		}
+ 		return nil
+ 	}
+-	if err := applyZone(d.dev, d.state.Lighting); err != nil {
++	if err := d.applyLightingZoneLocked("", d.dev, d.state.Lighting, time.Now()); err != nil {
+ 		return err
+ 	}
+ 	if d.state.Lighting.Enabled {
+diff --git a/internal/daemon/resume.go b/internal/daemon/resume.go
+index eedf8b7..1d69f38 100644
+--- a/internal/daemon/resume.go
++++ b/internal/daemon/resume.go
+@@ -80,6 +80,7 @@ func (d *Daemon) restoreVolatileState() {
+ 	d.mu.Unlock()
+ 
+ 	// Restore lighting (lost on sleep regardless of profile).
++	d.mu.Lock()
+ 	if d.dev != nil {
+ 		if err := d.applyLightingState(); err != nil {
+ 			slog.Warn("resume: failed to restore lighting", "err", err)
+@@ -87,6 +88,7 @@ func (d *Daemon) restoreVolatileState() {
+ 			slog.Info("resume: lighting restored")
+ 		}
+ 	}
++	d.mu.Unlock()
+ 
+ 	if state.Profile != "custom" {
+ 		slog.Info("skipping volatile state restore (stock profile active)", "profile", state.Profile)
+diff --git a/internal/daemon/server.go b/internal/daemon/server.go
+index 72d8d60..7a61b77 100644
+--- a/internal/daemon/server.go
++++ b/internal/daemon/server.go
+@@ -11,6 +11,7 @@ import (
+ 	"os"
+ 	"strconv"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/dahui/z13ctl/api"
+ 	"github.com/dahui/z13ctl/internal/aura"
+@@ -30,10 +31,11 @@ type request struct {
+ 	Mode       string   `json:"mode,omitempty"`
+ 	Color      string   `json:"color,omitempty"`   // "RRGGBB" hex
+ 	Color2     string   `json:"color2,omitempty"`  // "RRGGBB" hex
++	Palette    []string `json:"palette,omitempty"` // 2–8 "RRGGBB" color stops
+ 	Speed      string   `json:"speed,omitempty"`
+ 	Brightness int      `json:"brightness,omitempty"`
+ 	Set        string   `json:"set,omitempty"`
+-	Device     string   `json:"device,omitempty"`  // "keyboard", "lightbar", /dev/hidrawN; empty = all
++	Device     string   `json:"device,omitempty"` // "keyboard", "lightbar", /dev/hidrawN; empty = all
+ 	Events     []string `json:"events,omitempty"`
+ 	PL1        string   `json:"pl1,omitempty"`
+ 	PL2        string   `json:"pl2,omitempty"`
+@@ -43,11 +45,11 @@ type request struct {
+ 
+ // response is the reply to a command or a streamed event notification.
+ type response struct {
+-	OK    bool   `json:"ok"`
+-	Error string `json:"error,omitempty"`
+-	Value string `json:"value,omitempty"`
++	OK    bool       `json:"ok"`
++	Error string     `json:"error,omitempty"`
++	Value string     `json:"value,omitempty"`
+ 	State *api.State `json:"state,omitempty"`
+-	Event string `json:"event,omitempty"`
++	Event string     `json:"event,omitempty"`
+ }
+ 
+ // handleConn reads one JSON request, dispatches it, and writes one JSON response.
+@@ -85,6 +87,8 @@ func (d *Daemon) dispatch(req request) response {
+ 	switch req.Cmd {
+ 	case "apply":
+ 		return d.handleApply(req)
++	case "palette":
++		return d.handlePalette(req)
+ 	case "off":
+ 		return d.handleOff(req)
+ 	case "brightness":
+@@ -127,6 +131,7 @@ func (d *Daemon) dispatch(req request) response {
+ 		d.mu.Lock()
+ 		s := d.state
+ 		d.mu.Unlock()
++		s.Capabilities = []string{"palette-cycle"}
+ 		// Populate firmware-managed fields from sysfs (not cached in daemon state).
+ 		s.BootSound = readIntSysfs(cli.FindBootSoundPath())
+ 		s.PanelOverdrive = readIntSysfs(cli.FindPanelOverdrivePath())
+@@ -194,6 +199,7 @@ func (d *Daemon) handleApply(req request) response {
+ 
+ 	d.mu.Lock()
+ 	defer d.mu.Unlock()
++	d.stopPaletteLocked(req.Device)
+ 
+ 	if d.dev == nil {
+ 		return response{OK: false, Error: "no HID device available"}
+@@ -238,9 +244,82 @@ func (d *Daemon) handleApply(req request) response {
+ 	return response{OK: true}
+ }
+ 
++func (d *Daemon) handlePalette(req request) response {
++	colors, err := parsePalette(req.Palette)
++	if err != nil {
++		return response{OK: false, Error: err.Error()}
++	}
++	duration, err := paletteDuration(req.Speed)
++	if err != nil {
++		return response{OK: false, Error: "speed: " + err.Error()}
++	}
++	if req.Brightness < 0 || req.Brightness > 3 {
++		return response{OK: false, Error: fmt.Sprintf("brightness %d out of range 0–3", req.Brightness)}
++	}
++
++	d.mu.Lock()
++	defer d.mu.Unlock()
++	d.stopPaletteLocked(req.Device)
++
++	if d.dev == nil {
++		return response{OK: false, Error: "no HID device available"}
++	}
++	target, err := d.dev.FilteredView(req.Device)
++	if err != nil {
++		return response{OK: false, Error: err.Error()}
++	}
++	first := colors[0]
++	if err := aura.Apply(target, aura.ModeStatic, first.r, first.g, first.b, 0, 0, 0, aura.SpeedNormal, uint8(req.Brightness)); err != nil {
++		return response{OK: false, Error: "palette: " + err.Error()}
++	}
++	if err := aura.InitDirect(target); err != nil {
++		return response{OK: false, Error: "palette: " + err.Error()}
++	}
++	time.Sleep(50 * time.Millisecond)
++	if err := aura.UpdateDirect(target, first.r, first.g, first.b); err != nil {
++		return response{OK: false, Error: "palette: " + err.Error()}
++	}
++
++	normalized := make([]string, len(req.Palette))
++	for i, color := range req.Palette {
++		normalized[i] = strings.ToUpper(color)
++	}
++	ls := api.LightingState{
++		Enabled:    true,
++		Mode:       "palette",
++		Color:      normalized[0],
++		Color2:     normalized[1],
++		Palette:    normalized,
++		Speed:      req.Speed,
++		Brightness: req.Brightness,
++	}
++	if req.Device == "" {
++		d.state.Lighting = ls
++		d.state.Devices = nil
++	} else if !strings.HasPrefix(req.Device, "/") {
++		if d.state.Devices == nil {
++			d.state.Devices = make(map[string]api.LightingState)
++		}
++		d.state.Devices[req.Device] = ls
++	}
++	if req.Device == "" || !strings.HasPrefix(req.Device, "/") {
++		if err := saveState(d.state); err != nil {
++			slog.Warn("failed to save state", "err", err)
++		}
++	}
++	d.startPaletteLocked(req.Device, colors, duration, time.Now())
++	device := req.Device
++	if device == "" {
++		device = "all"
++	}
++	slog.Info("palette", "device", device, "colors", len(normalized), "speed", req.Speed, "brightness", req.Brightness)
++	return response{OK: true}
++}
++
+ func (d *Daemon) handleOff(req request) response {
+ 	d.mu.Lock()
+ 	defer d.mu.Unlock()
++	d.stopPaletteLocked(req.Device)
+ 
+ 	if d.dev == nil {
+ 		return response{OK: false, Error: "no HID device available"}
+@@ -523,6 +602,11 @@ func (d *Daemon) handleFanCurve(req request) response {
+ 	d.mu.Lock()
+ 	tdp := d.state.TDP
+ 	d.mu.Unlock()
++	// Prefer the live PPT value. Firmware/profile changes made outside the
++	// daemon can leave the cached state stale or unset.
++	if liveTDP, readErr := cli.ReadEffectivePPT(readProfileFromSysfs()); readErr == nil {
++		tdp = &liveTDP
++	}
+ 	if tdp != nil && tdp.PL1SPL > cli.TDPMaxSafe {
+ 		for _, p := range points {
+ 			if p.PWM < cli.HighTDPMinPWM {
+@@ -766,4 +850,3 @@ func writeResponse(conn net.Conn, r response) {
+ 	data, _ := json.Marshal(r)
+ 	_, _ = fmt.Fprintf(conn, "%s\n", data)
+ }
+-
+diff --git a/internal/daemon/state_test.go b/internal/daemon/state_test.go
+index c27a91c..3e5f7c6 100644
+--- a/internal/daemon/state_test.go
++++ b/internal/daemon/state_test.go
+@@ -5,6 +5,7 @@ package daemon
+ import (
+ 	"os"
+ 	"path/filepath"
++	"reflect"
+ 	"testing"
+ 
+ 	"github.com/dahui/z13ctl/api"
+@@ -29,7 +30,7 @@ func TestSaveAndLoadState_RoundTrip(t *testing.T) {
+ 		t.Fatalf("saveState: %v", err)
+ 	}
+ 	got := loadState()
+-	if got.Lighting != s.Lighting {
++	if !reflect.DeepEqual(got.Lighting, s.Lighting) {
+ 		t.Errorf("Lighting mismatch: got %+v, want %+v", got.Lighting, s.Lighting)
+ 	}
+ 	if got.Profile != s.Profile {
+@@ -64,16 +65,16 @@ func TestSaveAndLoadState_WithDevices(t *testing.T) {
+ 	}
+ 	got := loadState()
+ 
+-	if got.Lighting != s.Lighting {
++	if !reflect.DeepEqual(got.Lighting, s.Lighting) {
+ 		t.Errorf("Lighting mismatch: got %+v, want %+v", got.Lighting, s.Lighting)
+ 	}
+ 	if len(got.Devices) != 2 {
+ 		t.Fatalf("Devices len: got %d, want 2", len(got.Devices))
+ 	}
+-	if got.Devices["keyboard"] != s.Devices["keyboard"] {
++	if !reflect.DeepEqual(got.Devices["keyboard"], s.Devices["keyboard"]) {
+ 		t.Errorf("keyboard mismatch: got %+v, want %+v", got.Devices["keyboard"], s.Devices["keyboard"])
+ 	}
+-	if got.Devices["lightbar"] != s.Devices["lightbar"] {
++	if !reflect.DeepEqual(got.Devices["lightbar"], s.Devices["lightbar"]) {
+ 		t.Errorf("lightbar mismatch: got %+v, want %+v", got.Devices["lightbar"], s.Devices["lightbar"])
+ 	}
+ }
+@@ -83,7 +84,7 @@ func TestLoadState_MissingFile(t *testing.T) {
+ 
+ 	got := loadState()
+ 	def := defaultState()
+-	if got.Lighting != def.Lighting {
++	if !reflect.DeepEqual(got.Lighting, def.Lighting) {
+ 		t.Errorf("missing file: got Lighting %+v, want default %+v", got.Lighting, def.Lighting)
+ 	}
+ }
+@@ -102,7 +103,7 @@ func TestLoadState_InvalidJSON(t *testing.T) {
+ 
+ 	got := loadState()
+ 	def := defaultState()
+-	if got.Lighting != def.Lighting {
++	if !reflect.DeepEqual(got.Lighting, def.Lighting) {
+ 		t.Errorf("invalid JSON: got Lighting %+v, want default %+v", got.Lighting, def.Lighting)
+ 	}
+ }
+diff --git a/internal/daemon/palette.go b/internal/daemon/palette.go
+new file mode 100644
+index 0000000..9a36c9f
+--- /dev/null
++++ b/internal/daemon/palette.go
+@@ -0,0 +1,167 @@
++package daemon
++
++import (
++	"context"
++	"fmt"
++	"log/slog"
++	"math"
++	"strings"
++	"time"
++
++	"github.com/dahui/z13ctl/api"
++	"github.com/dahui/z13ctl/internal/aura"
++	"github.com/dahui/z13ctl/internal/cli"
++	"github.com/dahui/z13ctl/internal/hid"
++)
++
++const (
++	paletteMinColors = 2
++	paletteMaxColors = 8
++	// Direct mode uses one feature report per zone and is designed for streaming.
++	paletteFrameRate = 20
++)
++
++var paletteDurations = map[string]time.Duration{
++	"slow":   24 * time.Second,
++	"normal": 12 * time.Second,
++	"fast":   6 * time.Second,
++}
++
++type paletteRGB struct {
++	r, g, b uint8
++}
++
++func parsePalette(colors []string) ([]paletteRGB, error) {
++	if len(colors) < paletteMinColors || len(colors) > paletteMaxColors {
++		return nil, fmt.Errorf("palette requires %d–%d colors", paletteMinColors, paletteMaxColors)
++	}
++	out := make([]paletteRGB, len(colors))
++	for i, color := range colors {
++		r, g, b, err := cli.ParseColor(strings.ToUpper(color))
++		if err != nil {
++			return nil, fmt.Errorf("palette color %d: %w", i+1, err)
++		}
++		out[i] = paletteRGB{r: r, g: g, b: b}
++	}
++	return out, nil
++}
++
++func paletteDuration(speed string) (time.Duration, error) {
++	d, ok := paletteDurations[speed]
++	if !ok {
++		return 0, fmt.Errorf("unknown speed %q (valid: slow normal fast)", speed)
++	}
++	return d, nil
++}
++
++func paletteColorAt(colors []paletteRGB, elapsed, duration time.Duration) paletteRGB {
++	if len(colors) == 0 || duration <= 0 {
++		return paletteRGB{}
++	}
++	progress := float64(elapsed%duration) / float64(duration)
++	position := progress * float64(len(colors))
++	index := int(math.Floor(position)) % len(colors)
++	next := (index + 1) % len(colors)
++	fraction := position - math.Floor(position)
++	lerp := func(a, b uint8) uint8 {
++		return uint8(math.Round(float64(a) + (float64(b)-float64(a))*fraction))
++	}
++	return paletteRGB{
++		r: lerp(colors[index].r, colors[next].r),
++		g: lerp(colors[index].g, colors[next].g),
++		b: lerp(colors[index].b, colors[next].b),
++	}
++}
++
++func (d *Daemon) applyLightingZoneLocked(device string, target *hid.Device, ls api.LightingState, started time.Time) error {
++	if !ls.Enabled || ls.Mode != "palette" {
++		return applyZone(target, ls)
++	}
++	colors, err := parsePalette(ls.Palette)
++	if err != nil {
++		return err
++	}
++	duration, err := paletteDuration(ls.Speed)
++	if err != nil {
++		return err
++	}
++	first := colors[0]
++	if err := aura.Apply(target, aura.ModeStatic, first.r, first.g, first.b, 0, 0, 0, aura.SpeedNormal, uint8(ls.Brightness)); err != nil {
++		return err
++	}
++	if err := aura.InitDirect(target); err != nil {
++		return err
++	}
++	time.Sleep(50 * time.Millisecond)
++	if err := aura.UpdateDirect(target, first.r, first.g, first.b); err != nil {
++		return err
++	}
++	d.startPaletteLocked(device, colors, duration, started)
++	return nil
++}
++
++func (d *Daemon) startPaletteLocked(device string, colors []paletteRGB, duration time.Duration, started time.Time) {
++	targets := []string{device}
++	if device == "" {
++		targets = []string{"keyboard", "lightbar"}
++	}
++	for _, target := range targets {
++		d.stopPaletteLocked(target)
++		ctx, cancel := context.WithCancel(d.animationContext())
++		d.animations[target] = cancel
++		go d.runPalette(ctx, target, colors, duration, started)
++	}
++}
++
++func (d *Daemon) stopPaletteLocked(device string) {
++	if d.animations == nil {
++		d.animations = make(map[string]context.CancelFunc)
++	}
++	if device == "" {
++		for target, cancel := range d.animations {
++			cancel()
++			delete(d.animations, target)
++		}
++		return
++	}
++	if cancel, ok := d.animations[device]; ok {
++		cancel()
++		delete(d.animations, device)
++	}
++}
++
++func (d *Daemon) runPalette(ctx context.Context, device string, colors []paletteRGB, duration time.Duration, started time.Time) {
++	ticker := time.NewTicker(time.Second / paletteFrameRate)
++	defer ticker.Stop()
++	last := colors[0]
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case now := <-ticker.C:
++			color := paletteColorAt(colors, now.Sub(started), duration)
++			if color == last {
++				continue
++			}
++			d.mu.Lock()
++			if ctx.Err() != nil {
++				d.mu.Unlock()
++				return
++			}
++			if d.dev == nil {
++				d.mu.Unlock()
++				continue
++			}
++			target, err := d.dev.FilteredView(device)
++			if err == nil {
++				err = aura.UpdateDirect(target, color.r, color.g, color.b)
++			}
++			d.mu.Unlock()
++			if err != nil {
++				slog.Warn("palette frame failed", "device", device, "err", err)
++				continue
++			}
++			last = color
++		}
++	}
++}
+diff --git a/internal/daemon/palette_test.go b/internal/daemon/palette_test.go
+new file mode 100644
+index 0000000..45f9099
+--- /dev/null
++++ b/internal/daemon/palette_test.go
+@@ -0,0 +1,66 @@
++package daemon
++
++import (
++	"testing"
++	"time"
++)
++
++func TestParsePalette(t *testing.T) {
++	t.Parallel()
++	got, err := parsePalette([]string{"ff0000", "00FF00", "0000ff"})
++	if err != nil {
++		t.Fatalf("parsePalette: %v", err)
++	}
++	if got[0] != (paletteRGB{r: 255}) || got[1] != (paletteRGB{g: 255}) || got[2] != (paletteRGB{b: 255}) {
++		t.Fatalf("unexpected colors: %#v", got)
++	}
++
++	for _, colors := range [][]string{
++		{"FF0000"},
++		{"FF0000", "not-a-color"},
++		{"000000", "111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888"},
++	} {
++		if _, err := parsePalette(colors); err == nil {
++			t.Errorf("parsePalette(%v) unexpectedly succeeded", colors)
++		}
++	}
++}
++
++func TestPaletteColorAtInterpolatesAndWraps(t *testing.T) {
++	t.Parallel()
++	colors := []paletteRGB{{r: 255}, {g: 255}, {b: 255}}
++	duration := 12 * time.Second
++
++	tests := []struct {
++		elapsed time.Duration
++		want    paletteRGB
++	}{
++		{0, paletteRGB{r: 255}},
++		{2 * time.Second, paletteRGB{r: 128, g: 128}},
++		{4 * time.Second, paletteRGB{g: 255}},
++		{8 * time.Second, paletteRGB{b: 255}},
++		{10 * time.Second, paletteRGB{r: 128, b: 128}},
++		{12 * time.Second, paletteRGB{r: 255}},
++	}
++	for _, tt := range tests {
++		if got := paletteColorAt(colors, tt.elapsed, duration); got != tt.want {
++			t.Errorf("at %v: got %#v, want %#v", tt.elapsed, got, tt.want)
++		}
++	}
++}
++
++func TestPaletteDurations(t *testing.T) {
++	t.Parallel()
++	wants := map[string]time.Duration{
++		"slow": 24 * time.Second, "normal": 12 * time.Second, "fast": 6 * time.Second,
++	}
++	for speed, want := range wants {
++		got, err := paletteDuration(speed)
++		if err != nil || got != want {
++			t.Errorf("%s: got %v, %v; want %v", speed, got, err, want)
++		}
++	}
++	if _, err := paletteDuration("turbo"); err == nil {
++		t.Error("unknown speed unexpectedly accepted")
++	}
++}
+
